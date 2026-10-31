@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://chumimario02.github.io/smb1-online-web/",
+      "permanent": false
+    }
+  ]
+}

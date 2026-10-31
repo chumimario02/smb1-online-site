@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMB1 Remastered Online — Co-op P2P para niveles custom</title>
+<meta name="description" content="Juega Super Mario Bros. Remastered en co-op online: salas públicas, relay online y editor de niveles. Fan game open source hecho con Godot.">
+<meta property="og:title" content="SMB1 Remastered Online">
+<meta property="og:description" content="Co-op online para SMB1 Remastered. Salas públicas, P2P y editor de niveles.">
+<meta property="og:type" content="website">
+<link rel="icon" href="https://raw.githubusercontent.com/JHDev2006/Super-Mario-Bros.-Remastered-Public/main/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --red: #e52521;
+    --red-dark: #b81b18;
+    --blue: #049cd8;
+    --yellow: #fbd000;
+    --green: #43b047;
+    --sky: #5c94fc;
+    --bg: #0b0d13;
+    --bg-2: #11141d;
+    --card: #151a26;
+    --line: #232a3a;
+    --text: #eef1f8;
+    --muted: #9aa4bb;
+    --pixel: "Press Start 2P", monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* pixel starfield / grid background */
+  .bg {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(92,148,252,.18), transparent 60%),
+      radial-gradient(900px 500px at 0% 10%, rgba(229,37,33,.14), transparent 55%),
+      linear-gradient(180deg, #0b0d13 0%, #0b0d13 60%, #0e1119 100%);
+  }
+  .bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse at 50% 0%, black 30%, transparent 75%);
+  }
+  .pixels { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .pixels span {
+    position: absolute;
+    width: 6px; height: 6px;
+    background: var(--yellow);
+    opacity: .0;
+    animation: float 14s linear infinite;
+  }
+  @keyframes float {
+    0% { transform: translateY(110vh) scale(1); opacity: 0; }
+    10% { opacity: .55; }
+    90% { opacity: .35; }
+    100% { transform: translateY(-10vh) scale(.6); opacity: 0; }
+  }
+
+  .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+
+  header.nav {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(14px);
+    background: rgba(11,13,19,.72);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .2px; }
+  .brand img { width: 26px; height: 26px; image-rendering: pixelated; }
+  .brand small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+  .nav-links { display: flex; gap: 22px; align-items: center; font-size: 14px; }
+  .nav-links a { color: var(--muted); text-decoration: none; transition: color .2s; }
+  .nav-links a:hover { color: #fff; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 12px 20px; border-radius: 10px; border: 1px solid transparent;
+    font-weight: 700; font-size: 14px; text-decoration: none; cursor: pointer;
+    transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
+    white-space: nowrap;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--red); color: #fff; box-shadow: 0 10px 30px -10px rgba(229,37,33,.9); }
+  .btn-primary:hover { background: #f02d29; box-shadow: 0 14px 34px -10px rgba(229,37,33,1); }
+  .btn-ghost { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); color: var(--text); }
+  .btn-ghost:hover { background: rgba(255,255,255,.08); }
+
+  .hero { padding: 84px 0 48px; display: grid; grid-template-columns: 1.15fr .85fr; gap: 48px; align-items: center; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 999px;
+    background: rgba(67,176,71,.12); border: 1px solid rgba(67,176,71,.3);
+    color: #8ee092; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 12px #4ade80; }
+  h1 {
+    font-size: clamp(38px, 5.2vw, 64px);
+    line-height: 1.05; margin: 18px 0 14px;
+    font-weight: 800; letter-spacing: -.03em;
+  }
+  h1 .pixel { font-family: var(--pixel); font-size: .52em; letter-spacing: .02em; display: block; color: var(--yellow); margin-bottom: 14px; }
+  h1 .grad {
+    background: linear-gradient(90deg, #fff 0%, #cfe0ff 55%, #7fb0ff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lead { font-size: 17px; color: var(--muted); max-width: 560px; margin: 0 0 26px; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .note { margin-top: 18px; font-size: 12.5px; color: #7b86a0; display: flex; align-items: center; gap: 8px; }
+  .note svg { flex: 0 0 auto; }
+
+  .hero-art { position: relative; display: flex; justify-content: center; }
+  .hero-art .glow {
+    position: absolute; width: 340px; height: 340px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(251,208,0,.28), transparent 62%);
+    filter: blur(8px);
+  }
+  .block {
+    position: relative; width: 240px; height: 240px;
+    background: linear-gradient(160deg, #ffd83d, #f5a623 55%, #e08a00);
+    border: 8px solid #5a2d00;
+    border-radius: 10px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,.8), inset 0 0 0 8px #ffb300, inset 0 0 40px rgba(255,255,255,.25);
+    display: grid; place-items: center;
+    transform: rotate(-4deg);
+    animation: bob 4.5s ease-in-out infinite;
+    image-rendering: pixelated;
+  }
+  .block::before, .block::after {
+    content: ""; position: absolute; width: 16px; height: 16px; background: #5a2d00;
+    box-shadow: 0 0 0 4px #ffb300;
+  }
+  .block::before { top: 18px; left: 18px; }
+  .block::after { top: 18px; right: 18px; }
+  .block .q {
+    font-family: var(--pixel); font-size: 116px; color: #5a2d00;
+    text-shadow: 6px 6px 0 rgba(255,255,255,.28);
+    line-height: 1;
+  }
+  .block .shadow { position: absolute; bottom: -22px; width: 76%; height: 18px; background: rgba(0,0,0,.45); filter: blur(10px); border-radius: 50%; }
+  @keyframes bob { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-14px) rotate(-2deg); } }
+
+  section { padding: 64px 0; }
+  .eyebrow { font-family: var(--pixel); font-size: 11px; color: var(--yellow); letter-spacing: .06em; margin-bottom: 10px; }
+  h2 { font-size: clamp(26px, 3.4vw, 38px); margin: 0 0 10px; letter-spacing: -.02em; }
+  .section-lead { color: var(--muted); max-width: 620px; margin: 0 0 36px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+    border: 1px solid var(--line); border-radius: 16px; padding: 22px;
+    transition: transform .18s ease, border-color .18s ease, background .18s ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: #35405a; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); }
+  .card .ico {
+    width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center;
+    font-size: 20px; margin-bottom: 14px; background: rgba(92,148,252,.12); border: 1px solid rgba(92,148,252,.25);
+  }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: step; }
+  .step { position: relative; padding: 26px 22px 22px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    font-family: var(--pixel); font-size: 12px; color: #0b0d13;
+    background: var(--yellow); width: 30px; height: 30px; border-radius: 8px;
+    display: grid; place-items: center; margin-bottom: 14px;
+    box-shadow: 0 6px 18px -6px rgba(251,208,0,.8);
+  }
+  .step h3 { margin: 0 0 6px; font-size: 15px; }
+  .step p { margin: 0; color: var(--muted); font-size: 14px; }
+  .step code { background: rgba(255,255,255,.07); padding: 2px 6px; border-radius: 5px; font-size: 12.5px; color: #cfe0ff; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 24px; }
+  .panel h3 { margin: 0 0 4px; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+  .panel .tag { font-family: var(--pixel); font-size: 9px; padding: 4px 7px; border-radius: 6px; background: rgba(229,37,33,.16); color: #ff9d9a; border: 1px solid rgba(229,37,33,.3); }
+  .panel.blue .tag { background: rgba(4,156,216,.14); color: #8fd8f7; border-color: rgba(4,156,216,.3); }
+  .panel ol { margin: 14px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+  .panel li { margin-bottom: 8px; }
+  .kbd { display: inline-block; font-family: var(--pixel); font-size: 10px; padding: 4px 7px; border-radius: 6px; background: #0d1018; border: 1px solid #2a3348; color: #dbe4ff; }
+
+  .warn {
+    display: flex; gap: 14px; align-items: flex-start;
+    border: 1px solid rgba(251,208,0,.25); background: rgba(251,208,0,.06);
+    border-radius: 14px; padding: 18px 20px; color: #ffe9a3; font-size: 14px;
+  }
+  .warn strong { color: #fff3c4; }
+
+  footer { border-top: 1px solid rgba(255,255,255,.06); padding: 34px 0 46px; color: #7b86a0; font-size: 13px; }
+  .foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .foot a { color: #aab4c8; text-decoration: none; }
+  .foot a:hover { color: #fff; }
+  .foot-links { display: flex; gap: 18px; flex-wrap: wrap; }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; padding-top: 56px; }
+    .hero-art { order: -1; }
+    .block { width: 180px; height: 180px; }
+    .block .q { font-size: 88px; }
+    .grid, .steps, .split { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="pixels" id="pixels"></div>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" style="color:inherit;text-decoration:none">
+      <img src="https://raw.githubusercontent.com/JHDev2006/Super-Mario-Bros.-Remastered-Public/main/icon.png" alt="">
+      <span>SMB1R ONLINE<small>co-op p2p</small></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Características</a>
+      <a href="#play">Cómo jugar</a>
+      <a href="#online">Online</a>
+      <a href="#classic">Classic</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-primary" href="https://github.com/chumimario02/Super-Mario-Bros.-Remastered-Public/releases/tag/v1.0-online" target="_blank" rel="noopener">Descargar</a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <span class="badge"><span class="dot"></span> ONLINE CO-OP · GPL-3.0</span>
+      <h1>
+        <span class="pixel">SUPER MARIO BROS.</span>
+        <span class="grad">Remastered Online</span>
+      </h1>
+      <p class="lead">
+        Juega niveles custom y campañas clásicas en co-op con tus amigos.
+        Salas públicas, conexión <strong>relay</strong> a través de un servidor ligero y el editor de niveles completo.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://chumimario02.github.io/smb1-online-web/?v=1" target="_blank" rel="noopener">
+          🎮 Jugar en el navegador
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/chumimario02/Super-Mario-Bros.-Remastered-Public/releases/tag/v1.0-online" target="_blank" rel="noopener">
+          ⬇ Descargar (Windows)
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/chumimario02/Super-Mario-Bros.-Remastered-Public" target="_blank" rel="noopener">
+          Ver código
+        </a>
+      </div>
+      <p class="note">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+        En la web pulsa <strong>📁 ROM</strong> para cargar tu propia ROM de Super Mario Bros. (NES). No se incluye ningún ROM ni assets de Nintendo.
+      </p>
+      <p class="note" style="color:#8ee092">
+        <span style="width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 10px #4ade80;display:inline-block"></span>
+        Build v1.0 con NETPLAY · servidor de salas online
+      </p>
+    </div>
+    <div class="hero-art">
+      <div class="glow"></div>
+      <div class="block"><span class="q">?</span><span class="shadow"></span></div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="eyebrow">◆ FEATURES</div>
+      <h2>Todo lo que trae el modo online</h2>
+      <p class="section-lead">Un fork del SMB1 Remastered público con co-op real: no son fantasmas, son jugadores de verdad en el mismo nivel.</p>
+      <div class="grid">
+        <article class="card">
+          <div class="ico">🎮</div>
+          <h3>Co-op de verdad</h3>
+          <p>Hasta 4 jugadores en la misma sala, viéndose y compartiendo bloques, enemigos y power-ups.</p>
+        </article>
+        <article class="card">
+          <div class="ico">🌐</div>
+          <h3>Relay ligero</h3>
+          <p>Todo pasa por un servidor relay propio: funciona en cualquier red y dispositivo, sin abrir puertos ni WebRTC.</p>
+        </article>
+        <article class="card">
+          <div class="ico">🚪</div>
+          <h3>Salas públicas</h3>
+          <p>Crea un servidor, comparte el código o entra desde la lista de salas públicas. Sin abrir puertos.</p>
+        </article>
+        <article class="card">
+          <div class="ico">🛠️</div>
+          <h3>Editor completo</h3>
+          <p>Niveles custom, packs de recursos, personajes y mundos. El host manda el nivel a todos al empezar.</p>
+        </article>
+        <article class="card">
+          <div class="ico">🍄</div>
+          <h3>Campañas clásicas</h3>
+          <p>SMB1 y Lost Levels también en online: elige el juego en <code>NETPLAY</code> y a jugar desde 1-1.</p>
+        </article>
+        <article class="card">
+          <div class="ico">💾</div>
+          <h3>Gratis y open source</h3>
+          <p>Hecho con Godot 4, licencia GPL-3.0. Todo el código está en GitHub.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="play">
+    <div class="wrap">
+      <div class="eyebrow">◆ EMPIEZA AQUÍ</div>
+      <h2>Instalarlo lleva 2 minutos</h2>
+      <p class="section-lead">Descarga, coloca tu ROM y abre el juego. Después, el online está a un botón.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Descarga el juego</h3>
+          <p>Baja el zip de la última release y descomprímelo. También puedes compilar el proyecto con Godot 4.6.</p>
+        </div>
+        <div class="step">
+          <h3>Usa tu ROM</h3>
+          <p>Necesitas una copia legal de <em>Super Mario Bros.</em> de NES. El juego te pedirá el archivo <code>.nes</code> la primera vez.</p>
+        </div>
+        <div class="step">
+          <h3>Dale a NETPLAY</h3>
+          <p>En el menú principal elige <code>NETPLAY</code> para crear un servidor o unirte a uno.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="online">
+    <div class="wrap">
+      <div class="eyebrow">◆ ONLINE</div>
+      <h2>Crea o únete a una sala</h2>
+      <p class="section-lead">El host elige el juego o nivel; el resto se lo descarga automáticamente. Así de simple.</p>
+      <div class="split">
+        <div class="panel">
+          <h3>Crear servidor <span class="tag">HOST</span></h3>
+          <ol>
+            <li>Abre <span class="kbd">NETPLAY</span> en el menú principal.</li>
+            <li><strong>CREATE SERVER</strong> y elige juego: SMB1, Lost Levels o un nivel custom.</li>
+            <li>Pulsa <strong>START LEVEL</strong> y comparte el código de 4 letras.</li>
+          </ol>
+        </div>
+        <div class="panel blue">
+          <h3>Unirse <span class="tag">CLIENT</span></h3>
+          <ol>
+            <li>Abre <span class="kbd">NETPLAY</span>.</li>
+            <li><strong>PUBLIC SERVERS</strong> y elige la sala, o escribe el código.</li>
+            <li>Espera a que el host empiece: entrarás en el mismo nivel automáticamente.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="classic">
+    <div class="wrap">
+      <div class="eyebrow">◆ VERSIÓN CLÁSICA</div>
+      <h2>SMB1 Classic Multiplayer</h2>
+      <p class="section-lead">
+        El Super Mario Bros. original, en <strong>C + SDL2</strong> y sin emulador: resolución NES exacta,
+        60 fps y co-op online tipo <strong>fantasma</strong>. El otro jugador aparece en tu nivel y
+        compartís poderes, ladrillos y bloques <code>?</code>, pero cada uno lleva su propia partida.
+      </p>
+      <div class="split">
+        <div class="panel">
+          <h3>Qué incluye <span class="tag">v0.1</span></h3>
+          <ul>
+            <li>Single-player completo de Super Mario Bros.</li>
+            <li>Online de 2 jugadores con salas de código de 4 letras.</li>
+            <li>Fantasma del otro jugador con su skin: Mario, Luigi, Hielo y Fuego.</li>
+            <li>Poderes compartidos y bloques eco: lo que rompes desaparece para los dos.</li>
+            <li>Espera en la bandera y respawn en la pantalla de tu compañero.</li>
+            <li>Vidas infinitas y reloj congelado.</li>
+          </ul>
+          <p style="margin-top:18px">
+            <a class="btn btn-primary" href="https://github.com/chumimario02/smb1-classic-multiplayer/releases/download/v0.1/SMB1-Classic-Multiplayer-Windows.zip" target="_blank" rel="noopener">
+              ⬇ Descargar Classic (Windows)
+            </a>
+          </p>
+        </div>
+        <div class="panel blue">
+          <h3>Cómo jugar <span class="tag">4 PASOS</span></h3>
+          <ol>
+            <li>Descomprime el zip y pon tu ROM legal como <code>smb.nes</code> junto al <code>.exe</code>.</li>
+            <li>Abre <code>smbvanilla.exe</code> y elige <strong>MULTIPLAYER</strong>.</li>
+            <li>Uno pulsa <strong>HOST GAME</strong> y comparte el código <code>SALA XXXX</code>.</li>
+            <li>El otro pulsa <strong>JOIN GAME</strong>, escribe el código y ¡a jugar!</li>
+          </ol>
+          <p style="margin-top:14px;font-size:13px;color:var(--muted)">
+            Para el online hace falta el servidor de salas:
+            <a href="https://github.com/chumimario02/smb1-classic-multiplayer-server" target="_blank" rel="noopener">smb1-classic-multiplayer-server</a>
+            (<code>npm start</code>). No incluye ROM ni assets de Nintendo.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="eyebrow">◆ IMPORTANTE</div>
+      <h2>Antes de jugar</h2>
+      <div class="warn">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:0 0 auto;margin-top:2px"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/></svg>
+        <div>
+          <strong>Este es un fan game no oficial.</strong> No está afiliado ni patrocinado por Nintendo.
+          Super Mario Bros. es una marca de Nintendo. Necesitas una ROM original para jugar; aquí no se distribuye
+          ningún ROM ni material con copyright de Nintendo. El proyecto es open source bajo GPL-3.0.
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      SMB1 Remastered Online · fan project · hecho con Godot 4
+      <div style="margin-top:6px">Basado en el trabajo de <a href="https://github.com/JHDev2006/Super-Mario-Bros.-Remastered-Public" target="_blank" rel="noopener">JHDev2006</a>.</div>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/chumimario02/Super-Mario-Bros.-Remastered-Public/releases/tag/v1.0-online" target="_blank" rel="noopener">Descargar</a>
+      <a href="https://github.com/chumimario02/Super-Mario-Bros.-Remastered-Public" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://smb1r-online-rooms.onrender.com" target="_blank" rel="noopener">Servidor de salas</a>
+      <a href="https://github.com/JHDev2006/Super-Mario-Bros.-Remastered-Public/blob/main/LICENSE" target="_blank" rel="noopener">Licencia GPL-3.0</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // floating pixels
+  const holder = document.getElementById('pixels');
+  const colors = ['#fbd000', '#e52521', '#049cd8', '#43b047', '#ffffff'];
+  for (let i = 0; i < 26; i++) {
+    const s = document.createElement('span');
+    s.style.left = Math.random() * 100 + 'vw';
+    s.style.background = colors[Math.floor(Math.random() * colors.length)];
+    s.style.animationDelay = (-Math.random() * 14) + 's';
+    s.style.animationDuration = (10 + Math.random() * 12) + 's';
+    s.style.width = s.style.height = (4 + Math.random() * 5) + 'px';
+    holder.appendChild(s);
+  }
+</script>
+</body>
+</html>
